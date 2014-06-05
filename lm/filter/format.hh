@@ -4,6 +4,8 @@
 #include "lm/filter/arpa_io.hh"
 #include "lm/filter/count_io.hh"
 
+#undef BOOST_LEXICAL_CAST_ASSUME_C_LOCALE
+#define BOOST_LEXICAL_CAST_ASSUME_C_LOCALE
 #include <boost/lexical_cast.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 

@@ -11,8 +11,8 @@ namespace lm {
 namespace np {
 
 Vocabulary::Vocabulary(const nplm::vocabulary &vocab)
-  : base::Vocabulary(vocab.lookup_word("<s>"), vocab.lookup_word("</s>"), vocab.lookup_word("<unk>")),
-    vocab_(vocab), null_word_(vocab.lookup_word("<null>")) {}
+    : base::Vocabulary(vocab.lookup_word("<s>"), vocab.lookup_word("</s>"), vocab.lookup_word("<unk>")),
+      vocab_(vocab), null_word_(vocab.lookup_word("<null>")) {}
 
 Vocabulary::~Vocabulary() {}
 
@@ -52,16 +52,8 @@ bool Model::Recognize(const std::string &name) {
   }
 }
 
-namespace {
-nplm::neuralLM *LoadNPLM(const std::string &file) {
-  util::scoped_ptr<nplm::neuralLM> ret(new nplm::neuralLM());
-  ret->read(file);
-  return ret.release();
-}
-} // namespace
-
 Model::Model(const std::string &file, std::size_t cache)
-  : base_instance_(LoadNPLM(file)), vocab_(base_instance_->get_vocabulary()), cache_size_(cache) {
+    : base_instance_(new nplm::neuralLM(file)), vocab_(base_instance_->get_vocabulary()), cache_size_(cache) {
   UTIL_THROW_IF(base_instance_->get_order() > NPLM_MAX_ORDER, util::Exception, "This NPLM has order " << (unsigned int)base_instance_->get_order() << " but the KenLM wrapper was compiled with " << NPLM_MAX_ORDER << ".  Change the defintion of NPLM_MAX_ORDER and recompile.");
   // log10 compatible with backoff models.
   base_instance_->set_log_base(10.0);
@@ -84,32 +76,38 @@ FullScoreReturn Model::FullScore(const State &from, const WordIndex new_word, St
   // State is in natural word order.
   FullScoreReturn ret;
   for (int i = 0; i < backend->order() - 1; ++i) {
-    backend->staging_ngram()(i) = from.words[i];
+    backend->staging_ngram()(i) = from.words[i];  // staging_ngram is thread specific only because backend_ is.
   }
   backend->staging_ngram()(backend->order() - 1) = new_word;
   ret.prob = backend->lookup_from_staging();
   // Always say full order.
   ret.ngram_length = backend->order();
   // Shift everything down by one.
-  memcpy(out_state.words, from.words + 1, sizeof(WordIndex) * (backend->order() - 2));
-  out_state.words[backend->order() - 2] = new_word;
+  memcpy(out_state.words, from.words + 1, sizeof(WordIndex) * (backend->order() - 2));  //TODO: why shift? why not build it right in the first place?
+  out_state.words[backend->order() - 2] = new_word;  //TODO: don't keep calling order()
   // Fill in trailing words with zeros so state comparison works.
   memset(out_state.words + backend->order() - 1, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - backend->order()));
   return ret;
 }
 
-// TODO: optimize with direct call?
+// TODO: inline FullScore call without building explicit reversed state
 FullScoreReturn Model::FullScoreForgotState(const WordIndex *context_rbegin, const WordIndex *context_rend, const WordIndex new_word, State &out_state) const {
-  // State is in natural word order.  The API here specifies reverse order.
-  std::size_t state_length = std::min<std::size_t>(Order() - 1, context_rend - context_rbegin);
   State state;
-  // Pad with null words.
-  for (lm::WordIndex *i = state.words; i < state.words + Order() - 1 - state_length; ++i) {
-    *i = null_word_;
-  }
-  // Put new words at the end.
-  std::reverse_copy(context_rbegin, context_rbegin + state_length, state.words + Order() - 1 - state_length);
+  GetState(context_rbegin, context_rend, state);
   return FullScore(state, new_word, out_state);
+}
+
+void Model::GetState(const WordIndex *context_rbegin, const WordIndex *context_rend, State &state) const
+{
+  // State is in natural word order.  The API here specifies reverse order.
+  std::size_t const ctxlen = Order() - 1;
+  std::size_t const state_length = std::min<std::size_t>(ctxlen, context_rend - context_rbegin);
+  // Pad with null words.
+  lm::WordIndex *end = state.words + ctxlen - state_length;
+  for (lm::WordIndex *i = state.words; i < end; ++i)
+    *i = null_word_;
+  // Put new words at the end.
+  std::reverse_copy(context_rbegin, context_rbegin + state_length, end);
 }
 
 } // namespace np
