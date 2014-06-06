@@ -35,12 +35,12 @@ class Vocabulary : public base::Vocabulary {
       return Index(std::string(str.data(), str.size()));
     }
 
-    lm::WordIndex NullWord() const { return null_word_; }
+    ::lm::WordIndex NullWord() const { return null_word_; }
 
   private:
     const nplm::vocabulary &vocab_;
 
-    const lm::WordIndex null_word_;
+    const ::lm::WordIndex null_word_;
 };
 
 // Sorry for imposing my limitations on your code.
@@ -64,9 +64,9 @@ inline uint64_t hash_value(const State &state, uint64_t seed = 0) {
   return util::MurmurHashNative(state.words, sizeof(State::words), seed);
 }
 
-class Model : public lm::base::ModelFacade<Model, State, Vocabulary> {
+class Model : public ::lm::base::ModelFacade<Model, State, Vocabulary> {
   private:
-    typedef lm::base::ModelFacade<Model, State, Vocabulary> P;
+    typedef ::lm::base::ModelFacade<Model, State, Vocabulary> P;
 
   public:
     // Does this look like an NPLM?
@@ -92,7 +92,7 @@ class Model : public lm::base::ModelFacade<Model, State, Vocabulary> {
 
     Vocabulary vocab_;
 
-    lm::WordIndex null_word_;
+    ::lm::WordIndex null_word_;
 
     const std::size_t cache_size_;
 };
