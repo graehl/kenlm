@@ -35,18 +35,19 @@ makekenlm() {
         icu=/usr/local/Cellar/icu4c/55.1
         toolset=Darwin
     fi
-    withicu=--with-icu=$icu
+    withicu="--with-icu=$icu"
     if [[ `uname` = Linux ]] ; then
         memcpyarg="cxxflags=-include cxxflags=util/glibc_memcpy.hh"
     fi
     marg="-s max-order=$m --max-kenlm-order=$m"
-    nplmarg="--with-nplm -s with-nplm=1"
+    nplmarg="--with-nplm=$scriptdir/../ken-nplm" #
+    #doesn't work or i don't understand. instead, edit lm/Jamfile
     boostarg="cxxflags=-I$boostinc cxxflags=-I$neuralinc cxxflags=-I$eigeninc linkflags=-L$boostlib linkflags=-L$neurallib"
-    warnarg="cxxflags=-Wno-unused-variable cxxflags=-Wno-deprecated-declarations"
+    warnarg="cxxflags=-Wno-unused-variable cxxflags=-Wno-deprecated-declarations cxxflags=-Wno-sign-compare cxxflags=-Wno-strict-overflow cxxflags=-Wno-reorder -Wno-switch"
     #  ldflags=
     set -x
     for link in $links; do
-        LD_LIBRARY_PATH=$neurallib:$LD_LIBRARY_PATH ./bjam -a -q -d+1 $nplmarg $marg link=$link variant=release debug-symbols=off $warnarg $memcpyarg $boostarg $withicu --with-toolset=$toolset -j10
+        LD_LIBRARY_PATH=$neurallib:$LD_LIBRARY_PATH ./bjam -d+2 $nplmarg $marg link=$link variant=release debug-symbols=off $warnarg $memcpyarg $boostarg $withicu --with-toolset=$toolset -j10
     done
     set +x
 }

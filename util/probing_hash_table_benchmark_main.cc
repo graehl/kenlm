@@ -23,7 +23,7 @@ void Test(uint64_t entries, uint64_t lookups, float multiplier = 1.5) {
   scoped_malloc backing(util::CallocOrThrow(size));
   Table table(backing.get(), size);
   boost::random::mt19937 gen;
-  boost::random::uniform_int_distribution<> dist(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max());
+  boost::random::uniform_int_distribution<uint64_t> dist(std::numeric_limits<uint64_t>::min(), std::numeric_limits<uint64_t>::max());
   double start = UserTime();
   for (uint64_t i = 0; i < entries; ++i) {
     Entry entry;

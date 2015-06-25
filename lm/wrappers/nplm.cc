@@ -10,9 +10,12 @@
 namespace lm {
 namespace np {
 
-Vocabulary::Vocabulary(const nplm::vocabulary &vocab)
-    : base::Vocabulary(vocab.lookup_word("<s>"), vocab.lookup_word("</s>"), vocab.lookup_word("<unk>")),
-      vocab_(vocab), null_word_(vocab.lookup_word("<null>")) {}
+Vocabulary::Vocabulary(const nplm::vocabulary &vocab) : vocab_(vocab) {
+  null_word_ = vocab.lookup_word("<null>");
+  base::Vocabulary::SetSpecial(vocab_.lookup_word("<s>"),
+                               vocab_.lookup_word("</s>"),
+                               vocab_.lookup_word("<unk>"));
+}
 
 Vocabulary::~Vocabulary() {}
 
@@ -54,7 +57,7 @@ bool Model::Recognize(const std::string &name) {
 
 Model::Model(const std::string &file, std::size_t cache)
     : base_instance_(new nplm::neuralLM()), vocab_(base_instance_->get_vocabulary()), cache_size_(cache) {
-  base_instance->read(file);
+  base_instance_->read(file);
   UTIL_THROW_IF(base_instance_->get_order() > NPLM_MAX_ORDER, util::Exception, "This NPLM has order " << (unsigned int)base_instance_->get_order() << " but the KenLM wrapper was compiled with " << NPLM_MAX_ORDER << ".  Change the defintion of NPLM_MAX_ORDER and recompile.");
   // log10 compatible with backoff models.
   base_instance_->set_log_base(10.0);
