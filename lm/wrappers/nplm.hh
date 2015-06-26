@@ -12,7 +12,14 @@
 /* Wrapper to NPLM "by Ashish Vaswani, with contributions from David Chiang
  * and Victoria Fossum."
  * http://nlg.isi.edu/software/nplm/
+
+  latest nplm 0.3 e.g. https://github.com/graehl/nplm
  */
+
+/// as always this must be same at kenlm build time and client compile time
+#ifndef NPLM_MAX_ORDER
+#define NPLM_MAX_ORDER KENLM_MAX_ORDER
+#endif
 
 namespace nplm {
 class vocabulary;
@@ -24,27 +31,26 @@ namespace np {
 
 class Vocabulary : public base::Vocabulary {
   public:
-    Vocabulary(const nplm::vocabulary &vocab);
+    Vocabulary(nplm::vocabulary const& vocab);
 
     ~Vocabulary();
 
+    /// call after load on the owning Backend.
+    void SetSpecials();
+
     WordIndex Index(const std::string &str) const;
 
-    // TODO: lobby them to support StringPiece
-    WordIndex Index(const StringPiece &str) const {
-      return Index(std::string(str.data(), str.size()));
-    }
+    WordIndex Index(const StringPiece &str) const;
+
+    WordIndex Index(char const* str) const;
 
     ::lm::WordIndex NullWord() const { return null_word_; }
 
   private:
-    const nplm::vocabulary &vocab_;
-
-    const ::lm::WordIndex null_word_;
+    nplm::vocabulary const& vocab_;
+    ::lm::WordIndex null_word_;
 };
 
-// Sorry for imposing my limitations on your code.
-#define NPLM_MAX_ORDER 7
 
 struct State {
   WordIndex words[NPLM_MAX_ORDER - 1];
@@ -84,11 +90,9 @@ class Model : public ::lm::base::ModelFacade<Model, State, Vocabulary> {
     void GetState(const WordIndex *context_rbegin, const WordIndex *context_rend, State &out_state) const;
 
   private:
+    Backend *GetThreadSpecificBackend() const;
     boost::scoped_ptr<nplm::neuralLM> base_instance_;
-
-    //TODO: why mutable?
     mutable boost::thread_specific_ptr<Backend> backend_;
-    //TODO: hopefully this doesn't mean we load #threads copies of whole LM in memory!
 
     Vocabulary vocab_;
 

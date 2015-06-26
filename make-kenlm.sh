@@ -13,11 +13,19 @@ boostsub=boost_${boostver:-1_${boostminor}_0}
 sharedinc=$xmtext/../Shared/cpp
 boostinc=$sharedinc/$boostsub/include
 boostlib=$xmtext/libraries/$boostsub/lib
-neuralinc=$sharedinc/nplm-ken/include
-neurallib=$xmtext/libraries/nplm-ken/lib
-eigeninc=$sharedinc/eigen-3.2.0
+nplm=${nplm:-nplm}
+#nplm=nplm01
+nplminc=$sharedinc/$nplm/include/$nplm
+nplmlib=$xmtext/libraries/$nplm/lib
+eigeninc=$sharedinc/eigen-3.2.5
 maxorders="5 7"
-links="static shared"
+if false ; then
+    links="shared static"
+    linksufs="so a"
+else
+    links="static"
+    linksufs="a"
+fi
 makekenlm() {
     local m=$1
     set -e
@@ -27,8 +35,10 @@ makekenlm() {
         echo run from kenlm source root
         exit 1
     fi
-    rm -rf lib include
-    find . -name bin -exec rm -rf {} \;
+    if ! [[ $noclean ]] ; then
+      rm -rf lib include
+      find . -name bin -exec rm -rf {} \;
+    fi
     icu=$xmtext/libraries/$icusubdir
     toolset=gcc
     if [[ $lwarch = Apple ]] ; then
@@ -37,17 +47,22 @@ makekenlm() {
     fi
     withicu="--with-icu=$icu"
     if [[ `uname` = Linux ]] ; then
-        memcpyarg="cxxflags=-include cxxflags=util/glibc_memcpy.hh"
+        memcpyarg="cflags=-include cflags=util/glibc_memcpy.hh"
     fi
     marg="-s max-order=$m --max-kenlm-order=$m"
-    nplmarg="--with-nplm=$scriptdir/../ken-nplm" #
-    #doesn't work or i don't understand. instead, edit lm/Jamfile
-    boostarg="cxxflags=-I$boostinc cxxflags=-I$neuralinc cxxflags=-I$eigeninc linkflags=-L$boostlib linkflags=-L$neurallib"
-    warnarg="cxxflags=-Wno-unused-variable cxxflags=-Wno-deprecated-declarations cxxflags=-Wno-sign-compare cxxflags=-Wno-strict-overflow cxxflags=-Wno-reorder -Wno-switch"
+    archargs=
+    for f in $archflags; do
+        archargs+=" cxxflags=$f"
+    done
+    nplmarg="--with-nplm=$scriptdir/../$nplm/src"
+    nplmpathsarg="cxxflags=-I$nplminc  linkflags=-L$nplmlib"
+    # 'with-nplm' path doesn't work, or i don't understand. instead, edit lm/Jamfile?
+    boostarg="cxxflags=-I$boostinc cxxflags=-I$eigeninc linkflags=-L$boostlib"
+    warnarg="cxxflags=-Wno-unused-variable cxxflags=-Wno-deprecated-declarations cxxflags=-Wno-sign-compare cxxflags=-Wno-strict-overflow cxxflags=-Wno-reorder"
     #  ldflags=
     set -x
     for link in $links; do
-        LD_LIBRARY_PATH=$neurallib:$LD_LIBRARY_PATH ./bjam -d+2 $nplmarg $marg link=$link variant=release debug-symbols=off $warnarg $memcpyarg $boostarg $withicu --with-toolset=$toolset -j10
+        LD_LIBRARY_PATH=$nplmlib:$LD_LIBRARY_PATH ./bjam -d+2 $nplmarg $nplmpathsarg $marg link=$link variant=release debug-symbols=off $warnarg $memcpyarg $boostarg $withicu $archargs --with-toolset=$toolset -j10
     done
     set +x
 }
@@ -67,12 +82,15 @@ installkenlm() {
     mkdir -p $libs
     mkdir -p $bins
     set -x
-    for s in so a; do
+    for s in $linksufs; do
         from=$libfrom/libkenlm.$s
         cp $from $libs/libKenLM.$s &&
         ln -sf libKenLM.$s $libs/libKenLM_debug.$s || echo no $from
     done
     cp $binfrom/* $bins
     set +x
+    echo
+    echo DONE $m-gram
 }
-makekenlm 5 && installkenlm 5 && makekenlm 7 && installkenlm 7 && echo ok && exit || exit 1
+makekenlm 7 && installkenlm 7
+makekenlm 5 && installkenlm 5

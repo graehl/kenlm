@@ -4,24 +4,44 @@
 
 #include <algorithm>
 #include <cstring>
+#include <cassert>
 
 #include "neuralLM.h"
 
 namespace lm {
 namespace np {
 
-Vocabulary::Vocabulary(const nplm::vocabulary &vocab) : vocab_(vocab) {
-  null_word_ = vocab.lookup_word("<null>");
+Vocabulary::Vocabulary(const nplm::vocabulary &vocab) : vocab_(vocab) {}
+
+Vocabulary::~Vocabulary() {}
+
+void Vocabulary::SetSpecials() {
+  null_word_ = vocab_.lookup_word("<null>");
   base::Vocabulary::SetSpecial(vocab_.lookup_word("<s>"),
                                vocab_.lookup_word("</s>"),
                                vocab_.lookup_word("<unk>"));
 }
 
-Vocabulary::~Vocabulary() {}
-
 WordIndex Vocabulary::Index(const std::string &str) const {
   return vocab_.lookup_word(str);
 }
+
+WordIndex Vocabulary::Index(const StringPiece &str) const {
+#if NPLM_HAVE_FIND_STRING_PIECE
+  return vocab_.lookup_word(std::pair<char const*, char const*>(str.begin(), str.end()));
+#else
+  return vocab_.lookup_word(std::string(str.data(), str.size()));
+#endif
+}
+
+WordIndex Vocabulary::Index(char const* key) const {
+#if NPLM_HAVE_FIND_STRING_PIECE
+  return vocab_.lookup_word(std::pair<char const*, char const*>(key, key + std::strlen(key)));
+#else
+  return vocab_.lookup_word(std::string(key));
+#endif
+}
+
 
 class Backend {
   public:
@@ -58,39 +78,50 @@ bool Model::Recognize(const std::string &name) {
 Model::Model(const std::string &file, std::size_t cache)
     : base_instance_(new nplm::neuralLM()), vocab_(base_instance_->get_vocabulary()), cache_size_(cache) {
   base_instance_->read(file);
+  vocab_.SetSpecials();
+  null_word_ = vocab_.NullWord();
+  assert(null_word_ == base_instance_->lookup_word("<null>"));
+  assert(vocab_.BeginSentence() == base_instance_->lookup_word("<s>"));
   UTIL_THROW_IF(base_instance_->get_order() > NPLM_MAX_ORDER, util::Exception, "This NPLM has order " << (unsigned int)base_instance_->get_order() << " but the KenLM wrapper was compiled with " << NPLM_MAX_ORDER << ".  Change the defintion of NPLM_MAX_ORDER and recompile.");
   // log10 compatible with backoff models.
   base_instance_->set_log_base(10.0);
   State begin_sentence, null_context;
-  std::fill(begin_sentence.words, begin_sentence.words + NPLM_MAX_ORDER - 1, base_instance_->lookup_word("<s>"));
-  null_word_ = base_instance_->lookup_word("<null>");
+  std::fill(begin_sentence.words, begin_sentence.words + NPLM_MAX_ORDER - 1, vocab_.BeginSentence());
   std::fill(null_context.words, null_context.words + NPLM_MAX_ORDER - 1, null_word_);
 
   Init(begin_sentence, null_context, vocab_, base_instance_->get_order());
+  GetThreadSpecificBackend(); // reduce frequency of thread bug, maybe (strictly speaking: unnecessary)
 }
 
-Model::~Model() {}
+Model::~Model() {
+  backend_.reset(0); // other values are destroyed when their threads end
+}
 
-FullScoreReturn Model::FullScore(const State &from, const WordIndex new_word, State &out_state) const {
+Backend *Model::GetThreadSpecificBackend() const {
   Backend *backend = backend_.get();
   if (!backend) {
     backend = new Backend(*base_instance_, cache_size_);
     backend_.reset(backend);
   }
+  return backend;
+}
+
+FullScoreReturn Model::FullScore(const State &from, const WordIndex new_word, State &out_state) const {
+  Backend *backend = GetThreadSpecificBackend();
   // State is in natural word order.
   FullScoreReturn ret;
-  for (int i = 0; i < backend->order() - 1; ++i) {
+  // Always say full order:
+  assert(backend->order() == Order());
+  ret.ngram_length = Order();
+  for (int i = 0; i < ret.ngram_length - 1; ++i)
     backend->staging_ngram()(i) = from.words[i];  // staging_ngram is thread specific only because backend_ is.
-  }
-  backend->staging_ngram()(backend->order() - 1) = new_word;
+  backend->staging_ngram()(ret.ngram_length - 1) = new_word;
   ret.prob = backend->lookup_from_staging();
-  // Always say full order.
-  ret.ngram_length = backend->order();
   // Shift everything down by one.
-  memcpy(out_state.words, from.words + 1, sizeof(WordIndex) * (backend->order() - 2));  //TODO: why shift? why not build it right in the first place?
-  out_state.words[backend->order() - 2] = new_word;  //TODO: don't keep calling order()
+  memcpy(out_state.words, from.words + 1, sizeof(WordIndex) * (ret.ngram_length - 2));
+  out_state.words[ret.ngram_length - 2] = new_word;
   // Fill in trailing words with zeros so state comparison works.
-  memset(out_state.words + backend->order() - 1, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - backend->order()));
+  memset(out_state.words + ret.ngram_length - 1, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - ret.ngram_length));
   return ret;
 }
 
@@ -104,14 +135,15 @@ FullScoreReturn Model::FullScoreForgotState(const WordIndex *context_rbegin, con
 void Model::GetState(const WordIndex *context_rbegin, const WordIndex *context_rend, State &state) const
 {
   // State is in natural word order.  The API here specifies reverse order.
-  std::size_t const ctxlen = Order() - 1;
-  std::size_t const state_length = std::min<std::size_t>(ctxlen, context_rend - context_rbegin);
+  unsigned char const ctxlen = Order() - 1;
+  unsigned char const state_length = std::min<unsigned char>(ctxlen, context_rend - context_rbegin);
   // Pad with null words.
-  lm::WordIndex *end = state.words + ctxlen - state_length;
-  for (lm::WordIndex *i = state.words; i < end; ++i)
+  WordIndex *fullend = state.words + ctxlen, *end = fullend - state_length;
+  for (WordIndex *i = state.words; i < end; ++i)
     *i = null_word_;
   // Put new words at the end.
   std::reverse_copy(context_rbegin, context_rbegin + state_length, end);
+  memset(fullend, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - ctxlen));
 }
 
 } // namespace np
