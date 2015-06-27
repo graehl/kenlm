@@ -7,7 +7,27 @@
  * sizeof(float*) + (kMaxOrder - 1) * sizeof(float) + malloc overhead
  */
 #ifndef KENLM_ORDER_MESSAGE
-#define KENLM_ORDER_MESSAGE "If your build system supports changing KENLM_MAX_ORDER, change it there and recompile.  In the KenLM tarball or Moses, use e.g. `bjam --max-kenlm-order=6 -a'.  Otherwise, edit lm/max_order.hh."
+#define KENLM_ORDER_MESSAGE                                                                               \
+  "If your build system supports changing KENLM_MAX_ORDER, change it there and recompile.  In the KenLM " \
+  "tarball or Moses, use e.g. `bjam --max-kenlm-order=6 -a'.  Otherwise, edit lm/max_order.hh."
 #endif
 
-#endif // LM_MAX_ORDER_H
+namespace lm {
+namespace ngram {
+
+typedef unsigned char Order;
+
+/// to make sure you link the right library, you may assert(kLibraryMaxOrder == KENLM_MAX_ORDER)
+extern Order kLibraryMaxOrder;
+
+struct CheckCorrectMaxOrder {
+  CheckCorrectMaxOrder() { AssertOrder(KENLM_MAX_ORDER); }
+
+  /// throw length_error if your order doesn't match library's
+  static void AssertOrder(Order headerOrder);
+};
+
+
+}}
+
+#endif  // LM_MAX_ORDER_H
