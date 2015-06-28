@@ -24,3 +24,8 @@ jam-files/engine/bootstrap/
 doc/
 ._*
 include
+.history
+*.patch
+make-kenlm.sh
+*.a
+*.so
