@@ -29,14 +29,13 @@ class neuralLM;
 namespace lm {
 namespace np {
 
+class Model;
+
 class Vocabulary : public base::Vocabulary {
   public:
     Vocabulary(nplm::vocabulary const& vocab);
 
     ~Vocabulary();
-
-    /// call after load on the owning Backend.
-    void SetSpecials();
 
     WordIndex Index(const std::string &str) const;
 
@@ -47,6 +46,10 @@ class Vocabulary : public base::Vocabulary {
     ::lm::WordIndex NullWord() const { return null_word_; }
 
   private:
+    friend class Model;
+    /// Model calls after load
+    void SetSpecials();
+
     nplm::vocabulary const& vocab_;
     ::lm::WordIndex null_word_;
 };
@@ -60,7 +63,8 @@ struct State {
   unsigned char Length() const {
     return NPLM_MAX_ORDER - 1; //TODO: should we detect zero-padding end?
   }
-  /// words is constructed zero-padded already
+  /// words is constructed zero-padded already since we don't store an unsigned
+  /// char length as in ngram::State
   void ZeroRemaining() {}
 };
 
@@ -92,7 +96,7 @@ class Model : public ::lm::base::ModelFacade<Model, State, Vocabulary> {
   private:
     Backend *GetThreadSpecificBackend() const;
     boost::scoped_ptr<nplm::neuralLM> base_instance_;
-    mutable boost::thread_specific_ptr<Backend> backend_;
+    mutable boost::thread_specific_ptr<Backend> backend_; // these are freed when their thread ends
 
     Vocabulary vocab_;
 

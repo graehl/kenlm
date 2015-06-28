@@ -90,11 +90,10 @@ Model::Model(const std::string &file, std::size_t cache)
   std::fill(null_context.words, null_context.words + NPLM_MAX_ORDER - 1, null_word_);
 
   Init(begin_sentence, null_context, vocab_, base_instance_->get_order());
-  GetThreadSpecificBackend(); // reduce frequency of thread bug, maybe (strictly speaking: unnecessary)
 }
 
 Model::~Model() {
-  backend_.reset(0); // other values are destroyed when their threads end
+  backend_.reset(0); // per-thread pointers are destroyed on thread exit already
 }
 
 Backend *Model::GetThreadSpecificBackend() const {
@@ -120,7 +119,7 @@ FullScoreReturn Model::FullScore(const State &from, const WordIndex new_word, St
   // Shift everything down by one.
   memcpy(out_state.words, from.words + 1, sizeof(WordIndex) * (ret.ngram_length - 2));
   out_state.words[ret.ngram_length - 2] = new_word;
-  // Fill in trailing words with zeros so state comparison works.
+  // Fill in trailing words with zeros so state comparison works. //TODO: template nplm on order?
   memset(out_state.words + ret.ngram_length - 1, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - ret.ngram_length));
   return ret;
 }
@@ -135,15 +134,16 @@ FullScoreReturn Model::FullScoreForgotState(const WordIndex *context_rbegin, con
 void Model::GetState(const WordIndex *context_rbegin, const WordIndex *context_rend, State &state) const
 {
   // State is in natural word order.  The API here specifies reverse order.
-  unsigned char const ctxlen = Order() - 1;
-  unsigned char const state_length = std::min<unsigned char>(ctxlen, context_rend - context_rbegin);
-  // Pad with null words.
-  WordIndex *fullend = state.words + ctxlen, *end = fullend - state_length;
-  for (WordIndex *i = state.words; i < end; ++i)
-    *i = null_word_;
-  // Put new words at the end.
-  std::reverse_copy(context_rbegin, context_rbegin + state_length, end);
-  memset(fullend, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - ctxlen));
+  unsigned const fullctxlen = Order() - 1;
+  unsigned const relevant_context_length = std::min(fullctxlen, (unsigned)(context_rend - context_rbegin));
+  // don't use a single byte for the context length (needs to be large enough to
+  // grab the full part of hypothetical 256 word contexts)
+
+  WordIndex *fullend = state.words + fullctxlen, *nullend = fullend - relevant_context_length;
+  // null word padding, reversed [rbegin, rend), i.e. normal order, 0 padding:
+  std::fill(state.words, nullend, null_word_);
+  std::reverse_copy(context_rbegin, context_rbegin + relevant_context_length, nullend);
+  memset(fullend, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - fullctxlen));
 }
 
 } // namespace np
