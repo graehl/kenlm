@@ -20,8 +20,10 @@ typedef unsigned char Order;
 /// to make sure you link the right library, you may assert(kLibraryMaxOrder == KENLM_MAX_ORDER)
 extern Order kLibraryMaxOrder;
 
-struct CheckCorrectMaxOrder {
-  CheckCorrectMaxOrder() { AssertOrder(KENLM_MAX_ORDER); }
+struct VerifyMaxOrder {
+  VerifyMaxOrder() { Assert();}
+
+  static inline void Assert() { AssertOrder(KENLM_MAX_ORDER); }
 
   /// throw length_error if your order doesn't match library's
   static void AssertOrder(Order headerOrder);
