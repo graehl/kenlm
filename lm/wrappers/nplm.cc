@@ -88,7 +88,6 @@ Model::Model(const std::string &file, std::size_t cache)
   State begin_sentence, null_context;
   std::fill(begin_sentence.words, begin_sentence.words + NPLM_MAX_ORDER - 1, vocab_.BeginSentence());
   std::fill(null_context.words, null_context.words + NPLM_MAX_ORDER - 1, null_word_);
-
   Init(begin_sentence, null_context, vocab_, base_instance_->get_order());
 }
 
@@ -143,7 +142,8 @@ void Model::GetState(const WordIndex *context_rbegin, const WordIndex *context_r
   // null word padding, reversed [rbegin, rend), i.e. normal order, 0 padding:
   std::fill(state.words, nullend, null_word_);
   std::reverse_copy(context_rbegin, context_rbegin + relevant_context_length, nullend);
-  memset(fullend, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - fullctxlen));
+  assert(state.words + NPLM_MAX_ORDER == fullend + (NPLM_MAX_ORDER - 1 - fullctxlen));
+  memset(fullend, 0, sizeof(WordIndex) * (NPLM_MAX_ORDER - 1 - fullctxlen));
 }
 
 } // namespace np
