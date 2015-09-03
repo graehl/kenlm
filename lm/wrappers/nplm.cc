@@ -11,34 +11,41 @@
 namespace lm {
 namespace np {
 
-Vocabulary::Vocabulary(const nplm::vocabulary &vocab) : vocab_(vocab) {}
+Vocabulary::Vocabulary() : vocab_() {}
+
+Vocabulary::Vocabulary(const nplm::vocabulary &vocab) : vocab_(&vocab) {}
 
 Vocabulary::~Vocabulary() {}
 
+void Vocabulary::SetVocab(const nplm::vocabulary &vocab) {
+  vocab_ = &vocab;
+  SetSpecials();
+}
+
 void Vocabulary::SetSpecials() {
-  null_word_ = vocab_.lookup_word("<null>");
-  base::Vocabulary::SetSpecial(vocab_.lookup_word("<s>"),
-                               vocab_.lookup_word("</s>"),
-                               vocab_.lookup_word("<unk>"));
+  null_word_ = vocab_->lookup_word("<null>");
+  base::Vocabulary::SetSpecial(vocab_->lookup_word("<s>"),
+                               vocab_->lookup_word("</s>"),
+                               vocab_->lookup_word("<unk>"));
 }
 
 WordIndex Vocabulary::Index(const std::string &str) const {
-  return vocab_.lookup_word(str);
+  return vocab_->lookup_word(str);
 }
 
 WordIndex Vocabulary::Index(const StringPiece &str) const {
 #if NPLM_HAVE_FIND_STRING_PIECE
-  return vocab_.lookup_word(std::pair<char const*, char const*>(str.begin(), str.end()));
+  return vocab_->lookup_word(std::pair<char const*, char const*>(str.begin(), str.end()));
 #else
-  return vocab_.lookup_word(std::string(str.data(), str.size()));
+  return vocab_->lookup_word(std::string(str.data(), str.size()));
 #endif
 }
 
 WordIndex Vocabulary::Index(char const* key) const {
 #if NPLM_HAVE_FIND_STRING_PIECE
-  return vocab_.lookup_word(std::pair<char const*, char const*>(key, key + std::strlen(key)));
+  return vocab_->lookup_word(std::pair<char const*, char const*>(key, key + std::strlen(key)));
 #else
-  return vocab_.lookup_word(std::string(key));
+  return vocab_->lookup_word(std::string(key));
 #endif
 }
 
@@ -75,10 +82,23 @@ bool Model::Recognize(const std::string &name) {
   }
 }
 
-Model::Model(const std::string &file, std::size_t cache)
-    : base_instance_(new nplm::neuralLM()), vocab_(base_instance_->get_vocabulary()), cache_size_(cache) {
-  base_instance_->read(file);
-  vocab_.SetSpecials();
+Model::Model(std::size_t cache) : cache_size_(cache) {}
+
+Model::Model(const std::string &file, std::size_t cache) : cache_size_(cache) {
+  std::ifstream in(file.c_str());
+  Load(in);
+}
+
+Model::Model(std::istream &in, std::size_t cache) : cache_size_(cache) {
+  Load(in);
+}
+
+void Model::Load(std::istream &file)
+{
+  nplm::neuralLM *nlm = new nplm::neuralLM;
+  base_instance_.reset(nlm);
+  nlm->read(file);
+  vocab_.SetVocab(nlm->get_vocabulary());
   null_word_ = vocab_.NullWord();
   assert(null_word_ == base_instance_->lookup_word("<null>"));
   assert(vocab_.BeginSentence() == base_instance_->lookup_word("<s>"));

@@ -33,9 +33,13 @@ class Model;
 
 class Vocabulary : public base::Vocabulary {
   public:
+    Vocabulary();
     Vocabulary(nplm::vocabulary const& vocab);
 
     ~Vocabulary();
+
+    /// vocab comes from nplm get_vocabulary() and must stay live
+    void SetVocab(nplm::vocabulary const& vocab);
 
     WordIndex Index(const std::string &str) const;
 
@@ -50,7 +54,7 @@ class Vocabulary : public base::Vocabulary {
     /// Model calls after load
     void SetSpecials();
 
-    nplm::vocabulary const& vocab_;
+    nplm::vocabulary const* vocab_;
     ::lm::WordIndex null_word_;
 };
 
@@ -82,9 +86,11 @@ class Model : public ::lm::base::ModelFacade<Model, State, Vocabulary> {
     // Does this look like an NPLM?
     static bool Recognize(const std::string &file);
 
+    Model(std::size_t cache_size = 1 << 20); // must call Load after this constructor
     explicit Model(const std::string &file, std::size_t cache_size = 1 << 20);
-
+    explicit Model(std::istream &file, std::size_t cache_size = 1 << 20);
     ~Model();
+    void Load(std::istream &);
 
     FullScoreReturn FullScore(const State &from, const WordIndex new_word, State &out_state) const;
 
