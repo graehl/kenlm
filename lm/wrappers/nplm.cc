@@ -102,13 +102,14 @@ void Model::Load(std::istream &file)
   null_word_ = vocab_.NullWord();
   assert(null_word_ == base_instance_->lookup_word("<null>"));
   assert(vocab_.BeginSentence() == base_instance_->lookup_word("<s>"));
-  UTIL_THROW_IF(base_instance_->get_order() > NPLM_MAX_ORDER, util::Exception, "This NPLM has order " << (unsigned int)base_instance_->get_order() << " but the KenLM wrapper was compiled with " << NPLM_MAX_ORDER << ".  Change the defintion of NPLM_MAX_ORDER and recompile.");
+  UTIL_THROW_IF(nlm->get_order() > NPLM_MAX_ORDER, util::Exception, "This NPLM has order " << (unsigned int)nlm->get_order() << " but the KenLM wrapper was compiled with " << NPLM_MAX_ORDER << ".  Change the defintion of NPLM_MAX_ORDER and recompile.");
   // log10 compatible with backoff models.
-  base_instance_->set_log_base(10.0);
+  nlm->set_log_base(10.0);
+  nlm->set_map_digits(false);
   State begin_sentence, null_context;
   std::fill(begin_sentence.words, begin_sentence.words + NPLM_MAX_ORDER - 1, vocab_.BeginSentence());
   std::fill(null_context.words, null_context.words + NPLM_MAX_ORDER - 1, null_word_);
-  Init(begin_sentence, null_context, vocab_, base_instance_->get_order());
+  Init(begin_sentence, null_context, vocab_, nlm->get_order());
 }
 
 Model::~Model() {

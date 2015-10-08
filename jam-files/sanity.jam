@@ -26,8 +26,10 @@ rule shell_or_fail ( cmd ) {
 cxxflags = [ os.environ "CXXFLAGS" ] ;
 cflags = [ os.environ "CFLAGS" ] ;
 ldflags = [ os.environ "LDFLAGS" ] ;
+boostlibsuffix = [ os.environ "BOOST_LIB_SUFFIX" ] ;
+boostlibsuffix ?= -mt ;
 
-#Run g++ with empty main and these arguments to see if it passes.  
+#Run g++ with empty main and these arguments to see if it passes.
 rule test_flags ( flags * : main ? ) {
   flags = $(cxxflags) $(ldflags) $(flags) ;
   if ! $(main) {
@@ -120,13 +122,13 @@ if $(with-macports) {
     boost-include = ;
   }
 }
- 
-#Convenience rule for boost libraries.  Defines library boost_$(name).  
+
+#Convenience rule for boost libraries.  Defines library boost_$(name).
 rule boost-lib ( name macro : deps * ) {
-  #Link multi-threaded programs against the -mt version if available.  Old 
+  #Link multi-threaded programs against the -mt version if available.  Old
   #versions of boost do not have -mt tagged versions of all libraries.   Sadly,
-  #boost.jam does not handle this correctly.  
-  flags = $(L-boost-search)" -lboost_"$(name)"-mt$(boost-lib-version)" ;
+  #boost.jam does not handle this correctly.
+  flags = $(L-boost-search)" -lboost_"$(name)"$(boostlibsuffix)$(boost-lib-version)" ;
   local main ;
   if $(name) = "unit_test_framework" {
     main = "BOOST_AUTO_TEST_CASE(foo) {}" ;
@@ -139,9 +141,9 @@ rule boost-lib ( name macro : deps * ) {
   }
   if [ test_flags $(flags) : $(main) ] {
     lib inner_boost_$(name) : : <threading>single $(boost-search) <name>boost_$(name)$(boost-lib-version) : : <library>$(deps) ;
-    lib inner_boost_$(name) : : <threading>multi $(boost-search) <name>boost_$(name)-mt$(boost-lib-version) : : <library>$(deps) ;
+    lib inner_boost_$(name) : : <threading>multi $(boost-search) <name>boost_$(name)$(boostlibsuffix)$(boost-lib-version) : : <library>$(deps) ;
   } else {
-    lib inner_boost_$(name) : : $(boost-search) <name>boost_$(name)$(boost-lib-version) : : <library>$(deps) ;
+    lib inner_boost_$(name) : : $(boost-search) <name>boost_$(name)$(boostlibsuffix)$(boost-lib-version) : : <library>$(deps) ;
   }
 
   if $(boost-auto-shared) = "<link>shared" {
@@ -163,13 +165,14 @@ rule boost ( min-version ) {
   if $(BOOST-VERSION) < $(min-version) && $(CLEANING) = no {
     exit You have Boost $(BOOST-VERSION).  This package requires Boost at least $(min-version) (and preferably newer). : 1 ;
   }
-  # If matching version tags exist, use them.  
+  # If matching version tags exist, use them.
   boost-lib-version = [ MATCH "#define BOOST_LIB_VERSION \"([^\"]*)\"" : $(boost-shell[1]) ] ;
   if [ test_flags $(L-boost-search)" -lboost_program_options-"$(boost-lib-version) ] {
     boost-lib-version = "-"$(boost-lib-version) ;
   } else {
     boost-lib-version = "" ;
   }
+
 
   #Are we linking static binaries against shared boost?
   boost-auto-shared = [ auto-shared "boost_program_options"$(boost-lib-version) : $(L-boost-search) ] ;
@@ -188,13 +191,13 @@ rule boost ( min-version ) {
 #    boost-lib timer TIMER_DYN_LINK : boost_chrono ;
 #  }
 }
- 
+
 #Link normally to a library, but sometimes static isn't installed so fall back to dynamic.
 rule external-lib ( name : search-path * ) {
   lib $(name) : : [ auto-shared $(name) : "-L"$(search-path) ] <search>$(search-path) ;
 }
 
-#Write the current command line to previous.sh.  This does not do shell escaping.  
+#Write the current command line to previous.sh.  This does not do shell escaping.
 {
   local build-log = $(TOP)/previous.sh ;
   if ! [ path.exists $(build-log) ] {
@@ -203,7 +206,7 @@ rule external-lib ( name : search-path * ) {
   local script = [ modules.peek : ARGV ] ;
   if $(script[1]) = "./jam-files/bjam" {
     #The ./bjam shell script calls ./jam-files/bjam so that appears in argv but
-    #we want ./bjam to appear so the environment variables are set correctly.  
+    #we want ./bjam to appear so the environment variables are set correctly.
     script = "./bjam "$(script[2-]:J=" ") ;
   } else {
     script = $(script:J=" ") ;
@@ -216,7 +219,7 @@ rule external-lib ( name : search-path * ) {
 requirements += <cxxflags>$(cxxflags) <cflags>$(cflags) <linkflags>$(ldflags) <os>LINUX,<toolset>clang:<link>shared ;
 
 if ! [ option.get "without-libsegfault" : : "yes" ] && ! $(FORCE-STATIC) {
-  #libSegFault prints a stack trace on segfault.  Link against it if available.  
+  #libSegFault prints a stack trace on segfault.  Link against it if available.
   if [ test_flags "-lSegFault" ] {
     external-lib SegFault ;
     requirements += <library>SegFault ;
@@ -258,7 +261,7 @@ rule build-projects ( projects * ) {
   }
 }
 
-#Only one post build hook is allowed.  Allow multiple.  
+#Only one post build hook is allowed.  Allow multiple.
 post-hooks = ;
 rule post-build ( ok ? ) {
   for local r in $(post-hooks) {
@@ -279,7 +282,7 @@ actions write-options {
   echo "$(OPTIONS-TO-WRITE)" > $(<) ;
 }
 
-#Compare contents of file with current.  If they're different, write to the 
+#Compare contents of file with current.  If they're different, write to the
 #file.  This file can then be used with <dependency>$(file) to force
 #recompilation.
 rule update-if-changed ( file current ) {
@@ -298,7 +301,7 @@ if [ option.get "sanity-test" : : "yes" ] {
   }
 }
 
-#Hack to act like alias in the sense that no lib is built, but only build cpp files once.  
+#Hack to act like alias in the sense that no lib is built, but only build cpp files once.
 import type ;
 rule fakelib ( name : deps * : requirements * : default-build * : usage-requirements * ) {
   local c-files = ;
