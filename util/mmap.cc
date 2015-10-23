@@ -100,8 +100,7 @@ void scoped_memory::call_realloc(std::size_t size) {
 void *MapOrThrow(std::size_t size, bool for_write, int flags, bool prefault, int fd, uint64_t offset) {
 #ifdef MAP_POPULATE // Linux specific
   if (prefault) {
-    flags |= MAP_LOCKED; // MAP_POPULATE is ignored completely for MAP_SHARED;
-    // MAP_LOCKED will prefault and also doesn't drop the pages from memory so should be as fast as READ.
+    flags |= MAP_POPULATE; // MAP_POPULATE is ignored completely for MAP_SHARED on very recent linux
   }
 #endif
 #if defined(_WIN32) || defined(_WIN64)
@@ -114,8 +113,14 @@ void *MapOrThrow(std::size_t size, bool for_write, int flags, bool prefault, int
   CloseHandle(hMapping);
   UTIL_THROW_IF(!ret, ErrnoException, "MapViewOfFile failed");
 #else
+  if (!for_write)
+    flags |= MAP_NORESERVE;
   int protect = for_write ? (PROT_READ | PROT_WRITE) : PROT_READ;
   void *ret;
+  #if MAP_POPULATE
+  // MAP_LOCKED will prefault and also doesn't drop the pages from memory so should be as fast as READ.
+  if (!prefault || (ret = mmap(NULL, size, protect, flags | MAP_LOCKED, fd, offset)) == MAP_FAILED)
+  #endif
   UTIL_THROW_IF((ret = mmap(NULL, size, protect, flags, fd, offset)) == MAP_FAILED, ErrnoException, "mmap failed for size " << size << " at offset " << offset);
 #  ifdef MADV_HUGEPAGE
   /* We like huge pages but it's fine if we can't have them.  Note that huge
