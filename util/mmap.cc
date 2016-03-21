@@ -21,6 +21,7 @@
 #include <windows.h>
 #include <io.h>
 #else
+#include <sys/resource.h>
 #include <sys/mman.h>
 #include <unistd.h>
 #endif
@@ -97,6 +98,30 @@ void scoped_memory::call_realloc(std::size_t size) {
   }
 }
 
+std::size_t Rlimit(int rlim_type, bool maximize) {
+#if defined(_WIN32) || defined(_WIN64)
+  return 0;
+#else
+  struct rlimit rlp;
+  int ret;
+  UTIL_THROW_IF(-1 == getrlimit(rlim_type, &rlp), ErrnoException, "getrlimit");
+  if (maximize && rlp.rlim_cur < rlp.rlim_max) {
+    rlp.rlim_cur = rlp.rlim_max;
+    UTIL_THROW_IF(-1 == setrlimit(rlim_type, &rlp), ErrnoException, "setrlimit");
+  }
+  return rlp.rlim_cur;
+#endif
+}
+
+inline std::size_t GetRlimitMemlock() {
+#if defined(_WIN32) || defined(_WIN64)
+  return 0;
+#else
+  static const std::size_t memlock = Rlimit(RLIMIT_MEMLOCK, false);
+  return memlock;
+#endif
+}
+
 void *MapOrThrow(std::size_t size, bool for_write, int flags, bool prefault, int fd, uint64_t offset) {
 #ifdef MAP_POPULATE // Linux specific
   if (prefault) {
@@ -117,10 +142,10 @@ void *MapOrThrow(std::size_t size, bool for_write, int flags, bool prefault, int
     flags |= MAP_NORESERVE;
   int protect = for_write ? (PROT_READ | PROT_WRITE) : PROT_READ;
   void *ret;
-  #if MAP_POPULATE
+#if MAP_POPULATE
   // MAP_LOCKED will prefault and also doesn't drop the pages from memory so should be as fast as READ.
-  if (!prefault || (ret = mmap(NULL, size, protect, flags | MAP_LOCKED, fd, offset)) == MAP_FAILED)
-  #endif
+  if (!prefault || size > GetRlimitMemlock() || (ret = mmap(NULL, size, protect, flags | MAP_LOCKED, fd, offset)) == MAP_FAILED)
+#endif
   UTIL_THROW_IF((ret = mmap(NULL, size, protect, flags, fd, offset)) == MAP_FAILED, ErrnoException, "mmap failed for size " << size << " at offset " << offset);
 #  ifdef MADV_HUGEPAGE
   /* We like huge pages but it's fine if we can't have them.  Note that huge
